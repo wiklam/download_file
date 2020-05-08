@@ -34,17 +34,17 @@ static int get_number(char *number){
 }
 
 
-void get_entrance(int argc, char **argv, char *ip, int *port, char *file, int *size){
+void get_entrance(int argc, char **argv, char **ip, int *port, char **file, int *size){
     if(argc != 5)
         error_handle("Invalid number of arguments - ./transport [server ip] [port] [filename] [filesize]\n", NULL);
     
-    ip = argv[1];
+    *ip = argv[1];
     struct sockaddr_in recipient;
-    if(!inet_pton(AF_INET, ip, &recipient.sin_addr))
+    if(!inet_pton(AF_INET, *ip, &recipient.sin_addr))
         error_handle("Invalid ip address\n", NULL);
     *port = get_number(argv[2]);
-    file = argv[3];
-    if(strcmp(file, "transport") == 0)   // do not want to overwrite the executable file
+    *file = argv[3];
+    if(strcmp(*file, "transport") == 0)   // do not want to overwrite the executable file
         error_handle("Filename can not be transport\n", NULL);
     *size = get_number(argv[4]);
 }

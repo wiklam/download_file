@@ -7,6 +7,12 @@
 
 #define WIN_SIZE 10
 #define MAX_PACKET 1000
+#define DEBUG
+#ifdef DEBUG
+#define debug(...) printf(__VA_ARGS__)
+#else
+#define debug(...)
+#endif
 
 static int window = 0;
 static bool received[WIN_SIZE];
@@ -35,7 +41,8 @@ static void receive_messages(){
 int main(int argc, char *argv[]){
     char *ip = NULL, *myfile = NULL;
     int port, size;
-    get_entrance(argc, argv, ip, &port, myfile, &size);
+    get_entrance(argc, argv, &ip, &port, &myfile, &size);
+    debug("ip: %s port: %d \nfilename: %s, size: %d\n", ip, port, myfile, size);
     int g = 0, packet_num = ((MAX_PACKET - 1) + size)/MAX_PACKET;
     myfile = NULL;
     while(true){
