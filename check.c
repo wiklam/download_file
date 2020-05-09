@@ -24,8 +24,8 @@ int Close(int filefd){
 }
 
 
-int Open(const char *path, int flags){
-    int ret = open(path, flags);
+int Open(const char *path, int flags, int mode){
+    int ret = open(path, flags, mode);
     if(ret < 0)
         error_handle("Open error %s\n", strerror(errno));
     return ret;
@@ -49,7 +49,7 @@ int min(int a, int b){
 
 static int get_number(char *number){
     int a = atoi(number);
-    if(a == 0 || a < 0){
+    if(a == 0){
         if(number[0] == '0' && strlen(number) == 1)
             return a;
         error_handle("Invalid port number\n", NULL);
@@ -67,8 +67,31 @@ void get_entrance(int argc, char **argv, char **ip, int *port, char **file, int 
     if(!inet_pton(AF_INET, *ip, &recipient.sin_addr))
         error_handle("Invalid ip address\n", NULL);
     *port = get_number(argv[2]);
+    if(*port <= 0 || *port > 65535)
+        error_handle("Invalid port number\n", NULL);
     *file = argv[3];
     if(strcmp(*file, "transport") == 0)   // do not want to overwrite the executable file
         error_handle("Filename can not be transport\n", NULL);
     *size = get_number(argv[4]);
+    if(*size <= 0 || *size > 10000000)
+        error_handle("Invalid size number\n", NULL);
+}
+
+
+ssize_t Sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen){
+    ssize_t rv = sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+    if (rv < 0)
+        error_handle("Sendto error %s\n", strerror(errno));
+    return rv;
+}
+
+
+ssize_t Recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen){
+    ssize_t rv = recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+    if (rv < 0){
+        if(errno == EAGAIN)
+            return 0;
+        error_handle("Recvfrom error %s\n", strerror(errno));
+    }
+    return rv;
 }

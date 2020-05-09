@@ -2,7 +2,7 @@
 #include "header.h"
 #include "check.h"
 
-#define WIN_SIZE 2000
+#define WIN_SIZE 1500
 #define MAX_PACKET 1000
 #define WAIT_TIME 100000 //in ms
 //#define DEBUG
@@ -25,22 +25,25 @@ static int prepare_message(char *message, int start, int size){
 static void send_request(int sockfd, struct sockaddr_in server, int start, int size){
     char message[20];
     int len = prepare_message(message, start, size);
-    sendto(sockfd, message,  len, MSG_DONTWAIT, 
+    Sendto(sockfd, message,  len, MSG_DONTWAIT, 
                     (struct sockaddr*) &server, sizeof(server));
 }
 
 
-static void receive_messages(int sockfd, struct in_addr sin_addr, unsigned short port){
+static void receive_messages(int sockfd, struct in_addr sin_addr, in_port_t port){
     char message[MAX_PACKET + 20];
     struct sockaddr_in  sender;	
     socklen_t sender_len = sizeof(sender);
-    int len;
-    while((len = recvfrom(sockfd, message, MAX_PACKET + 20, MSG_DONTWAIT, 
+    long len;
+    while((len = Recvfrom(sockfd, message, MAX_PACKET + 20, MSG_DONTWAIT, 
                         (struct sockaddr*)&sender, &sender_len))){
         if(len < 0)
             break;
-        if(sin_addr.s_addr != sender.sin_addr.s_addr || port != sender.sin_port)    // correct sender
+        if(sin_addr.s_addr != sender.sin_addr.s_addr || port != sender.sin_port){    // correct sender
+            printf("%d\n%d\n",sin_addr.s_addr, sender.sin_addr.s_addr);
+            debug("Dostałem smieci nie od serwera\n");
             continue;
+        }
 
         int start, size;
         sscanf(message, "DATA %d %d\n", &start, &size);
@@ -49,17 +52,14 @@ static void receive_messages(int sockfd, struct in_addr sin_addr, unsigned short
         
         int index = (start/MAX_PACKET)%WIN_SIZE;    // already received;
         if(received[index])
-            continue;
+            continue;   
         received[index] = 1;
-        
-        debug("Receiving messages %d\n", len);
-        debug("start: %d, size: %d", start, size);
+
         int cnt = 0;
         while(message[cnt] != '\n')
             cnt++;
         cnt++;
         memcpy(data[index], &message[cnt], size);
-        debug("po tym\n");
     }
 }
 
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]){
     
     int packet_num = ((MAX_PACKET - 1) + size)/MAX_PACKET;
     
-    int filefd = Open(myfile, O_CREAT|O_RDWR);
+    int filefd = Open(myfile, O_CREAT|O_TRUNC|O_WRONLY, 0644);
 
     int sockfd = Socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in server_address;
@@ -110,12 +110,11 @@ int main(int argc, char *argv[]){
         }
         
         while(received[window%WIN_SIZE]){
-            debug("moving window\n");
             received[window%WIN_SIZE] = 0;
-            debug("przy write\n");
             Write(filefd, data[window%WIN_SIZE], min(MAX_PACKET, size - window*MAX_PACKET));
-            debug("po write\n");
             window++;
+            if(window%10 == 0)
+                printf("%.2f%% done\n",((float)window/packet_num)*100);
         }
         if(window >= packet_num)
             break;
