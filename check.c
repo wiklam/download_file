@@ -8,6 +8,30 @@ static void error_handle(const char *str, char *err){
 }
 
 
+int Write(int fd, const char *buf, size_t count){
+    int ret = write(fd, buf, count);
+    if(ret < 0)
+        error_handle("Write error %s\n", strerror(errno));
+    return ret;
+}
+
+
+int Close(int filefd){
+    int ret = close(filefd);
+    if(ret < 0)
+        error_handle("Close error %s\n", strerror(errno));
+    return ret;
+}
+
+
+int Open(const char *path, int flags){
+    int ret = open(path, flags);
+    if(ret < 0)
+        error_handle("Open error %s\n", strerror(errno));
+    return ret;
+}
+
+
 int Socket(int domain, int type, int protocol){
     int rv = socket(domain, type, protocol);
     if (rv < 0)

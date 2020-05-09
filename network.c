@@ -1,13 +1,11 @@
 //Wiktor Pilarczyk 308533
 #include "header.h"
 #include "check.h"
-#include "header.h"
-#include "file.h"
-#include "check.h"
 
-#define WIN_SIZE 10
+#define WIN_SIZE 2000
 #define MAX_PACKET 1000
-#define DEBUG
+#define WAIT_TIME 100000 //in ms
+//#define DEBUG
 #ifdef DEBUG
 #define debug(...) printf(__VA_ARGS__)
 #else
@@ -15,8 +13,8 @@
 #endif
 
 static int window = 0;
-static bool received[WIN_SIZE];
-static char data[WIN_SIZE][10001];
+static int received[WIN_SIZE];
+static char data[WIN_SIZE][MAX_PACKET+2];
 
 
 static int prepare_message(char *message, int start, int size){
@@ -33,12 +31,14 @@ static void send_request(int sockfd, struct sockaddr_in server, int start, int s
 
 
 static void receive_messages(int sockfd, struct in_addr sin_addr, unsigned short port){
-    char message[1100];
+    char message[MAX_PACKET + 20];
     struct sockaddr_in  sender;	
     socklen_t sender_len = sizeof(sender);
     int len;
-    while((len = recvfrom(sockfd, message, 1099, MSG_DONTWAIT, 
+    while((len = recvfrom(sockfd, message, MAX_PACKET + 20, MSG_DONTWAIT, 
                         (struct sockaddr*)&sender, &sender_len))){
+        if(len < 0)
+            break;
         if(sin_addr.s_addr != sender.sin_addr.s_addr || port != sender.sin_port)    // correct sender
             continue;
 
@@ -52,12 +52,14 @@ static void receive_messages(int sockfd, struct in_addr sin_addr, unsigned short
             continue;
         received[index] = 1;
         
+        debug("Receiving messages %d\n", len);
+        debug("start: %d, size: %d", start, size);
         int cnt = 0;
         while(message[cnt] != '\n')
             cnt++;
         cnt++;
-        for(int g = 0; g < size; g++)
-            data[index][g] = message[g+cnt];
+        memcpy(data[index], &message[cnt], size);
+        debug("po tym\n");
     }
 }
 
@@ -68,31 +70,58 @@ int main(int argc, char *argv[]){
     get_entrance(argc, argv, &ip, &port, &myfile, &size);
     debug("ip: %s port: %d \nfilename: %s, size: %d\n", ip, port, myfile, size);
     
-    int g = 0, packet_num = ((MAX_PACKET - 1) + size)/MAX_PACKET;
+    int packet_num = ((MAX_PACKET - 1) + size)/MAX_PACKET;
     
+    int filefd = Open(myfile, O_CREAT|O_RDWR);
+
     int sockfd = Socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in server_address;
     bzero(&server_address, sizeof(server_address));
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);
     inet_pton(AF_INET, ip, &server_address.sin_addr);
+    
+    for(int g = 0; g < min(WIN_SIZE, packet_num); g++){
+        int start = (window + g)*(MAX_PACKET);
+        int packet_size = min(MAX_PACKET, size - (window + g)*(MAX_PACKET));
+        send_request(sockfd, server_address, start, packet_size);
+    }
 
-    while(true){
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = WAIT_TIME;
+
+    fd_set descriptors;
+    FD_ZERO(&descriptors);
+    FD_SET(sockfd, &descriptors);
+    int ret;
+
+    while((ret = select(sockfd + 1, &descriptors, NULL, NULL, &timeout)) >= 0){
         receive_messages(sockfd, server_address.sin_addr, server_address.sin_port);
 
-        if(!received[window + g]){
-            int start = (window + g)*(MAX_PACKET);
-            int packet_size = min(MAX_PACKET, size - (window + g)*(MAX_PACKET));
-            send_request(sockfd, server_address, start, packet_size);
+        if(ret == 0){
+            for(int g = 0; g < min(WIN_SIZE, packet_num - window); g++)
+                if(!received[(window+g)%WIN_SIZE]){
+                    int start = (window + g)*(MAX_PACKET);
+                    int packet_size = min(MAX_PACKET, size - (window + g)*(MAX_PACKET));
+                    send_request(sockfd, server_address, start, packet_size);
+                }
+            timeout.tv_usec = WAIT_TIME;
         }
-        while(received[window]){
-            received[window] = 0;
-
+        
+        while(received[window%WIN_SIZE]){
+            debug("moving window\n");
+            received[window%WIN_SIZE] = 0;
+            debug("przy write\n");
+            Write(filefd, data[window%WIN_SIZE], min(MAX_PACKET, size - window*MAX_PACKET));
+            debug("po write\n");
+            window++;
         }
+        if(window >= packet_num)
+            break;
 
-        g++;
-        g %= WIN_SIZE;
-        if(g + window == packet_num)
-            g = 0;
+        FD_ZERO(&descriptors);
+        FD_SET(sockfd, &descriptors);
     }
+    Close(filefd);
 }

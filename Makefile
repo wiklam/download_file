@@ -1,10 +1,10 @@
 CC = gcc
-CFLAGS = -std=gnu99 -Wextra -Wall -Wno-unused-parameter -Werror -fsanitize=address
+CFLAGS = -std=gnu99 -Wextra -Wall # -Wno-unused-parameter -Werror -fsanitize=address
 
 TARGET = transport
 
-SRCS = check.c file.c network.c
-OBJS = check.o file.o network.o
+SRCS = check.c network.c
+OBJS = check.o network.o
 
 .PHONY: all clean distclean
 
