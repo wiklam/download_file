@@ -40,7 +40,6 @@ static void receive_messages(int sockfd, struct in_addr sin_addr, in_port_t port
         if(len < 0)
             break;
         if(sin_addr.s_addr != sender.sin_addr.s_addr || port != sender.sin_port){    // correct sender
-            printf("%d\n%d\n",sin_addr.s_addr, sender.sin_addr.s_addr);
             debug("Dostałem smieci nie od serwera\n");
             continue;
         }
@@ -64,6 +63,37 @@ static void receive_messages(int sockfd, struct in_addr sin_addr, in_port_t port
 }
 
 
+static inline void try_move_window(int filefd, int size, int packet_num){
+    while(received[window%WIN_SIZE]){
+        received[window%WIN_SIZE] = 0;
+        Write(filefd, data[window%WIN_SIZE], min(MAX_PACKET, size - window*MAX_PACKET));
+        window++;
+        if(window%10 == 0)
+            printf("%.2f%% done\n",((float)window/packet_num)*100);
+    }
+}
+
+
+static inline int set_connection(char *ip, int port, struct sockaddr_in *server_address){
+    int sockfd = Socket(AF_INET, SOCK_DGRAM, 0);
+    
+    bzero(server_address, sizeof(*server_address));
+    (*server_address).sin_family = AF_INET;
+    (*server_address).sin_port = htons(port);
+    inet_pton(AF_INET, ip, &(*server_address).sin_addr);
+
+    return sockfd;
+}
+
+
+static inline void make_send(int sockfd, struct sockaddr_in server_address, int size, int index){
+    int start = (window + index)*(MAX_PACKET);
+    int packet_size = min(MAX_PACKET, size - (window + index)*(MAX_PACKET));
+    send_request(sockfd, server_address, start, packet_size);
+}
+
+
+
 int main(int argc, char *argv[]){
     char *ip = NULL, *myfile = NULL;
     int port, size;
@@ -74,18 +104,11 @@ int main(int argc, char *argv[]){
     
     int filefd = Open(myfile, O_CREAT|O_TRUNC|O_WRONLY, 0644);
 
-    int sockfd = Socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in server_address;
-    bzero(&server_address, sizeof(server_address));
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
-    inet_pton(AF_INET, ip, &server_address.sin_addr);
+    int sockfd = set_connection(ip, port, &server_address);
     
-    for(int g = 0; g < min(WIN_SIZE, packet_num); g++){
-        int start = (window + g)*(MAX_PACKET);
-        int packet_size = min(MAX_PACKET, size - (window + g)*(MAX_PACKET));
-        send_request(sockfd, server_address, start, packet_size);
-    }
+    for(int g = 0; g < min(WIN_SIZE, packet_num); g++)
+        make_send(sockfd, server_address, size, g);
 
     struct timeval timeout;
     timeout.tv_sec = 0;
@@ -101,21 +124,13 @@ int main(int argc, char *argv[]){
 
         if(ret == 0){
             for(int g = 0; g < min(WIN_SIZE, packet_num - window); g++)
-                if(!received[(window+g)%WIN_SIZE]){
-                    int start = (window + g)*(MAX_PACKET);
-                    int packet_size = min(MAX_PACKET, size - (window + g)*(MAX_PACKET));
-                    send_request(sockfd, server_address, start, packet_size);
-                }
+                if(!received[(window+g)%WIN_SIZE])
+                    make_send(sockfd, server_address, size, g);
             timeout.tv_usec = WAIT_TIME;
         }
+
+        try_move_window(filefd, size, packet_num);
         
-        while(received[window%WIN_SIZE]){
-            received[window%WIN_SIZE] = 0;
-            Write(filefd, data[window%WIN_SIZE], min(MAX_PACKET, size - window*MAX_PACKET));
-            window++;
-            if(window%10 == 0)
-                printf("%.2f%% done\n",((float)window/packet_num)*100);
-        }
         if(window >= packet_num)
             break;
 
